@@ -153,7 +153,9 @@ export const EditTool = Tool.define("edit", {
   },
 })
 
-export type Replacer = (content: string, find: string) => Generator<string, void, unknown>
+export type Replacer = ((content: string, find: string) => Generator<string, void, unknown>) & {
+  transformNewString?: (newString: string) => string
+}
 
 // Similarity thresholds for block anchor fallback matching
 const SINGLE_CANDIDATE_SIMILARITY_THRESHOLD = 0.0
@@ -431,34 +433,34 @@ export const IndentationFlexibleReplacer: Replacer = function* (content, find) {
   }
 }
 
-export const EscapeNormalizedReplacer: Replacer = function* (content, find) {
-  const unescapeString = (str: string): string => {
-    return str.replace(/\\(n|t|r|'|"|`|\\|\n|\$)/g, (match, capturedChar) => {
-      switch (capturedChar) {
-        case "n":
-          return "\n"
-        case "t":
-          return "\t"
-        case "r":
-          return "\r"
-        case "'":
-          return "'"
-        case '"':
-          return '"'
-        case "`":
-          return "`"
-        case "\\":
-          return "\\"
-        case "\n":
-          return "\n"
-        case "$":
-          return "$"
-        default:
-          return match
-      }
-    })
-  }
+export function unescapeString(str: string): string {
+  return str.replace(/\\(n|t|r|'|"|`|\\|\n|\$)/g, (match, capturedChar) => {
+    switch (capturedChar) {
+      case "n":
+        return "\n"
+      case "t":
+        return "\t"
+      case "r":
+        return "\r"
+      case "'":
+        return "'"
+      case '"':
+        return '"'
+      case "`":
+        return "`"
+      case "\\":
+        return "\\"
+      case "\n":
+        return "\n"
+      case "$":
+        return "$"
+      default:
+        return match
+    }
+  })
+}
 
+export const EscapeNormalizedReplacer: Replacer = function* (content, find) {
   const unescapedFind = unescapeString(find)
 
   // Try direct match with unescaped find string
@@ -479,6 +481,7 @@ export const EscapeNormalizedReplacer: Replacer = function* (content, find) {
     }
   }
 }
+EscapeNormalizedReplacer.transformNewString = unescapeString
 
 export const MultiOccurrenceReplacer: Replacer = function* (content, find) {
   // This replacer yields all exact matches, allowing the replace function
@@ -636,12 +639,13 @@ export function replace(content: string, oldString: string, newString: string, r
       const index = content.indexOf(search)
       if (index === -1) continue
       notFound = false
+      const effectiveNewString = replacer.transformNewString ? replacer.transformNewString(newString) : newString
       if (replaceAll) {
-        return content.replaceAll(search, newString)
+        return content.replaceAll(search, effectiveNewString)
       }
       const lastIndex = content.lastIndexOf(search)
       if (index !== lastIndex) continue
-      return content.substring(0, index) + newString + content.substring(index + search.length)
+      return content.substring(0, index) + effectiveNewString + content.substring(index + search.length)
     }
   }
 

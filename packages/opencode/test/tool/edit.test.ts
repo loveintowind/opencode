@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test"
 import path from "path"
 import fs from "fs/promises"
-import { EditTool } from "../../src/tool/edit"
+import { EditTool, replace } from "../../src/tool/edit"
 import { Instance } from "../../src/project/instance"
 import { tmpdir } from "../fixture/fixture"
 import { FileTime } from "../../src/file/time"
@@ -491,6 +491,50 @@ describe("tool.edit", () => {
           expect(results.some((r) => r.status === "fulfilled")).toBe(true)
         },
       })
+    })
+  })
+
+  describe("EscapeNormalizedReplacer transforms newString", () => {
+    test("unescapes literal \\n in both oldString and newString", () => {
+      // Simulate file content with real newlines
+      const content = 'def hello():\n    print("hello")\n    return True\n'
+
+      // LLM sends literal \n (escaped) in both oldString and newString
+      const oldString = 'def hello():\\n    print("hello")\\n    return True'
+      const newString = 'def hello():\\n    print("world")\\n    return False'
+
+      const result = replace(content, oldString, newString)
+
+      // newString should also be unescaped: real newlines, not literal \n
+      expect(result).toBe('def hello():\n    print("world")\n    return False\n')
+      expect(result).not.toContain("\\n")
+    })
+
+    test("unescapes literal \\t in newString", () => {
+      const content = "function foo() {\n\treturn 1;\n}\n"
+
+      const oldString = "function foo() {\\n\\treturn 1;\\n}"
+      const newString = "function foo() {\\n\\treturn 2;\\n}"
+
+      const result = replace(content, oldString, newString)
+
+      expect(result).toBe("function foo() {\n\treturn 2;\n}\n")
+      expect(result).not.toContain("\\n")
+      expect(result).not.toContain("\\t")
+    })
+
+    test("does not transform newString when matched by SimpleReplacer", () => {
+      // When oldString is found directly (no escape normalization needed),
+      // newString should be used as-is
+      const content = "hello world\n"
+
+      const oldString = "hello"
+      const newString = "goodbye\\nfriend"
+
+      const result = replace(content, oldString, newString)
+
+      // SimpleReplacer matches, so newString is NOT transformed — literal \n stays
+      expect(result).toBe("goodbye\\nfriend world\n")
     })
   })
 })
